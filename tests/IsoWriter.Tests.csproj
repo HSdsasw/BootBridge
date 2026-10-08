@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../Models.cs" Link="Models.cs" />
+    <Compile Include="../IsoImage.cs" Link="IsoImage.cs" />
+    <Compile Include="../DiskCatalog.cs" Link="DiskCatalog.cs" />
+    <Compile Include="../ImageTransfer.cs" Link="ImageTransfer.cs" />
+    <Compile Include="../ImageWriter.cs" Link="ImageWriter.cs" />
+    <Compile Include="../NativeDisk.cs" Link="NativeDisk.cs" />
+    <Compile Include="../InternalBoot/*.cs" Exclude="../InternalBoot/InternalBootForm.cs" Link="InternalBoot/%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

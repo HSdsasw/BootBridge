@@ -1,0 +1,15 @@
+bin/
+obj/
+dist/
+dist-standalone/
+tests/bin/
+tests/obj/
+.vs/
+*.user
+preview.png
+preview-internal.png
+tools/grub-*/
+tools/gnupg/
+tools/*.zip
+tools/*.sig
+tools/*.asc
