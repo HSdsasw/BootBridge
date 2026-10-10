@@ -2,6 +2,8 @@
 
 `grubx64.efi` is a standalone x86_64-efi image generated using the official GNU GRUB 2.14 Windows tools. It is not signed for UEFI Secure Boot.
 
+BootBridge 0.2 embeds the `ext2` module (which also reads supported ext4 filesystems), alongside NTFS/FAT and ISO9660, for staging ISOs from Linux. See the exact module list in `build-grub.ps1`.
+
 Upstream release: https://lists.gnu.org/archive/html/grub-devel/2026-01/msg00029.html
 
 Downloads:

@@ -1,18 +1,24 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
-    <UseWindowsForms>true</UseWindowsForms>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <ApplicationManifest>app.manifest</ApplicationManifest>
-    <AssemblyName>IsoWriter</AssemblyName>
+    <ApplicationManifest Condition="$([MSBuild]::IsOSPlatform('Windows'))">app.manifest</ApplicationManifest>
+    <AssemblyName>BootBridge</AssemblyName>
+    <Version>0.2.0</Version>
     <RootNamespace>IsoWriter</RootNamespace>
   </PropertyGroup>
   <ItemGroup><Compile Remove="tests\**\*.cs" /></ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.4" />
+  </ItemGroup>
+  <ItemGroup>
     <Content Include="assets\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="tools\build-grub.ps1" Link="assets\build-grub.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="README.md" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="packaging/start-bootbridge.sh" Link="start-bootbridge.sh" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

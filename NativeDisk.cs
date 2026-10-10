@@ -41,7 +41,7 @@ internal static class NativeDisk
         var handle = CreateFile(path.TrimEnd('\\'), write ? 0xC0000000u : 0u, 3, IntPtr.Zero, 3,
             raw ? 0xA0000000u : 0u, IntPtr.Zero); // NO_BUFFERING + WRITE_THROUGH
         if (!handle.IsInvalid) return handle;
-        var error = Error("Не удалось открыть " + path);
+        var error = Error("Could not open " + path);
         handle.Dispose();
         throw error;
     }
@@ -50,7 +50,7 @@ internal static class NativeDisk
     {
         byte[]? bytes = outputSize == 0 ? null : new byte[outputSize];
         if (!DeviceIoControl(handle, code, IntPtr.Zero, 0, bytes, outputSize, out _, IntPtr.Zero))
-            throw Error($"Ошибка операции с диском 0x{code:X}");
+            throw Error($"Disk operation failed: 0x{code:X}");
         return bytes ?? [];
     }
 
@@ -58,7 +58,7 @@ internal static class NativeDisk
     {
         byte[] bytes = Control(volume, Extents, 65536);
         int count = BitConverter.ToInt32(bytes, 0);
-        if (count < 1 || count > (bytes.Length - 8) / 24) throw new IOException("Не удалось определить физические диски тома.");
+        if (count < 1 || count > (bytes.Length - 8) / 24) throw new IOException("Could not identify the physical disks backing the volume.");
         return Enumerable.Range(0, count).Select(i => BitConverter.ToInt32(bytes, 8 + i * 24)).ToArray();
     }
 
@@ -66,11 +66,11 @@ internal static class NativeDisk
     {
         var path = new StringBuilder(32768);
         uint size = GetFinalPathNameByHandle(source.SafeFileHandle, path, (uint)path.Capacity, 1);
-        if (size == 0 || size >= path.Capacity) throw Error("Не удалось определить том ISO");
+        if (size == 0 || size >= path.Capacity) throw Error("Could not identify the ISO volume");
         string finalPath = path.ToString();
         int end = finalPath.IndexOf('}');
         if (!finalPath.StartsWith(@"\\?\Volume{", StringComparison.OrdinalIgnoreCase) || end < 0)
-            throw new IOException("ISO должен находиться на локальном томе с определяемым физическим диском.");
+            throw new IOException("The ISO must be on a local volume whose physical disk can be identified.");
         using var volume = Open(finalPath[..(end + 1)], false);
         return DiskNumbers(volume);
     }
@@ -80,7 +80,7 @@ internal static class NativeDisk
         var result = new List<string>();
         var name = new StringBuilder(1024);
         IntPtr search = FindFirstVolume(name, name.Capacity);
-        if (search == new IntPtr(-1)) throw Error("Не удалось перечислить тома");
+        if (search == new IntPtr(-1)) throw Error("Could not enumerate volumes");
         try
         {
             do
@@ -92,22 +92,22 @@ internal static class NativeDisk
                 {
                     int error = Marshal.GetLastWin32Error();
                     // Optical drives / empty removable readers have no disk extents.
-                    if (error is not (1 or 21 or 50)) throw Error("Не удалось проверить том " + path);
+                    if (error is not (1 or 21 or 50)) throw Error("Could not check volume " + path);
                 }
                 else
                 {
                     int count = BitConverter.ToInt32(bytes, 0);
-                    if (count < 1 || count > (bytes.Length - 8) / 24) throw new IOException("Некорректная карта тома.");
+                    if (count < 1 || count > (bytes.Length - 8) / 24) throw new IOException("Invalid volume map.");
                     var disks = Enumerable.Range(0, count).Select(i => BitConverter.ToInt32(bytes, 8 + 24 * i)).ToArray();
                     if (disks.Contains(diskNumber))
                     {
-                        if (count != 1) throw new IOException("Составные и динамические тома не поддерживаются.");
+                        if (count != 1) throw new IOException("Spanned and dynamic volumes are not supported.");
                         result.Add(path);
                     }
                 }
                 name.Clear();
                 if (FindNextVolume(search, name, name.Capacity)) continue;
-                if (Marshal.GetLastWin32Error() != 18) throw Error("Ошибка перечисления томов");
+                if (Marshal.GetLastWin32Error() != 18) throw Error("Volume enumeration failed");
                 break;
             } while (true);
         }
@@ -129,26 +129,26 @@ internal sealed class RawDisk : IDisposable, IImageDevice
     {
         this.handle = handle;
         buffer = NativeDisk.VirtualAlloc(IntPtr.Zero, BufferSize, 0x3000, 4);
-        if (buffer == IntPtr.Zero) throw NativeDisk.Error("Не удалось выделить буфер");
+        if (buffer == IntPtr.Zero) throw NativeDisk.Error("Could not allocate a buffer");
     }
     public void Seek(long position)
     {
         if (position < 0 || position % 512 != 0) throw new ArgumentOutOfRangeException(nameof(position));
         if (!NativeDisk.SetFilePointerEx(handle, position, out long actual, 0) || actual != position)
-            throw NativeDisk.Error("Не удалось установить позицию диска");
+            throw NativeDisk.Error("Could not seek on the disk");
     }
     public void Write(byte[] bytes, int count)
     {
         CheckCount(count);
         Marshal.Copy(bytes, 0, buffer, count);
         if (!NativeDisk.WriteFile(handle, buffer, count, out int written, IntPtr.Zero) || written != count)
-            throw NativeDisk.Error("Ошибка записи диска");
+            throw NativeDisk.Error("Disk write failed");
     }
     public void Read(byte[] bytes, int count)
     {
         CheckCount(count);
         if (!NativeDisk.ReadFile(handle, buffer, count, out int read, IntPtr.Zero) || read != count)
-            throw NativeDisk.Error("Ошибка чтения диска");
+            throw NativeDisk.Error("Disk read failed");
         Marshal.Copy(buffer, bytes, 0, count);
     }
     private static void CheckCount(int count)
@@ -157,7 +157,7 @@ internal sealed class RawDisk : IDisposable, IImageDevice
     }
     public void Flush()
     {
-        if (!NativeDisk.FlushFileBuffers(handle)) throw NativeDisk.Error("Не удалось сбросить кеш записи");
+        if (!NativeDisk.FlushFileBuffers(handle)) throw NativeDisk.Error("Could not flush the write cache");
     }
     public void Dispose() => NativeDisk.VirtualFree(buffer, 0, 0x8000);
 }

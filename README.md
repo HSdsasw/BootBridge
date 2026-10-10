@@ -1,104 +1,121 @@
-# ISO Writer
+# BootBridge 0.2
 
-Графическое приложение на C# / .NET 10 / Windows Forms для Windows 10/11 x64.
-Основной режим — **подготовка установки Linux с ISO на внутреннем диске, в том числе на том же физическом диске, где работает Windows**. Второй режим — побайтовая перезапись отдельного накопителя.
+**Prepare a Linux installer on an internal drive without a USB stick.** BootBridge is a C# / .NET 10 / Avalonia UI 12.1 application for **Windows x64 and Linux x64**. It can also write a hybrid ISO to a separate physical drive. Both platforms share the interface, with separate implementations for disk access, privileges, and UEFI.
 
-## Установка Linux с внутреннего диска
+## Run a packaged build
 
-Запустите `dist/IsoWriter.exe` и используйте первую вкладку. Приложение запрашивает права администратора; запуск DLL через `dotnet` не поднимает права и не подходит для реальной подготовки.
+### Windows
 
-Поддерживаются **UEFI x64 / GPT**, незашифрованный **NTFS** для ISO и существующий системный **FAT32 ESP**. Профили: Ubuntu/Linux Mint с `casper` и Debian Live с `live`. Legacy BIOS, ARM, Debian netinst, Fedora, Windows ISO и произвольные дистрибутивы в этом режиме не поддерживаются. Программа проверяет `.disk/info`, каталоги ISO, заголовок ядра x86-64, initrd и наличие загрузчика UEFI x64, не исполняя содержимое ISO.
+Extract the **entire** `win-x64` folder, run `BootBridge.exe`, and accept the UAC prompt. No separate .NET installation is required. Keep the `assets` folder and all other package files alongside the executable.
 
-В комплект включён автономный GNU GRUB 2.14. Он не подписан для Secure Boot: **Secure Boot должен быть выключен**. Программа не отключает его сама. Раздел с ISO должен быть полностью расшифрован; простого приостановления BitLocker недостаточно для чтения ISO из GRUB. Если Windows находится на другом зашифрованном разделе, её защиту BitLocker нужно предварительно приостановить и иметь ключ восстановления. Недоступное или неизвестное состояние защиты блокирует подготовку.
+### Linux
 
-1. Выберите существующий NTFS-раздел для ISO. Допускается C:, но выбранный раздел нельзя форматировать или удалять до окончания установки Linux.
-2. Если отдельного раздела нет, выберите раздел, из которого нужно выделить место, и нажмите **«Создать раздел…»**. Укажите объём для ISO и объём незанятого места для Linux. Программа запросит у Windows допустимое уменьшение и покажет точный план. Только после отдельного подтверждения она уменьшит существующий NTFS-раздел, создаст новый NTFS-раздел `ISO_INSTALL` и оставит остальное место нераспределённым. Форматируется только вновь созданный раздел. Отмена во время изменения разметки недоступна; при ошибке автоматического увеличения/удаления разделов не происходит, состояние нужно проверить в Управлении дисками. План сохраняется в `%LOCALAPPDATA%\IsoWriter`.
-3. Выберите ISO и нажмите **«Проверить и показать план»**. Эта стадия не меняет файлы EFI, NVRAM или разметку.
-4. Подтвердите план и нажмите **«Подготовить загрузку ISO»**. Образ копируется обычным файлом в `X:\IsoWriter-<id>\installer.iso`; копия проверяется SHA-256. Файлы GRUB размещаются в новой папке `EFI\IsoWriter-<id>` системного EFI-раздела.
-5. Создаётся отдельный пункт UEFI `ISO Writer Linux <id>`, добавляемый **в конец** `BootOrder`. Пункт Windows Boot Manager, BCD, загрузчик Windows и существующие разделы в этой операции не заменяются.
-6. Нажмите **«Следующая загрузка — Linux»**. Файлы снова проверяются, после чего устанавливается только `BootNext`. Чужой ранее установленный `BootNext` не перезаписывается. Самостоятельно выполните в Windows именно **«Перезагрузка»**. Программа не перезагружает компьютер.
-7. В меню GRUB выберите `Start Linux live installer`. По истечении таймера по умолчанию выполняется возврат в прошивку. Запустите установку Linux из Live-среды, выбрав предназначенное для Linux незанятое место / другой раздел.
+Extract the `linux-x64` folder and open a terminal inside it:
 
-**Не выбирайте «стереть весь диск» и не удаляйте раздел с ISO, пока установщик использует его файлы.** Для замены Windows разместите ISO на отдельном разделе, а не на C:. Для полного удаления всех разделов этого диска нужен внешний носитель; загрузка целого ISO в RAM в этой реализации не предусмотрена.
+```sh
+sh ./start-bootbridge.sh
+```
 
-## Удаление пункта загрузки и восстановление
+Alternatively:
 
-После подготовки путь к `installation.json` отображается в журнале. После перезапуска приложения нажмите **«Открыть установку…»** и выберите этот файл в папке `IsoWriter-<id>`.
+```sh
+chmod +x ./BootBridge
+./BootBridge
+```
 
-**«Убрать пункт загрузки»** сверяет полное содержимое EFI-записи, убирает только запись этой установки из текущего `BootOrder`, отменяет её `BootNext` и удаляет неизменённые файлы её GRUB. Чужие или изменённые записи не удаляются. ISO и журнал сохраняются; их папку можно удалить вручную, когда установщик больше не использует образ. Если Windows уже удалена, остатки временного раздела и EFI-пункта удаляются средствами Linux.
+The package requires a desktop Linux x86_64 system with glibc and X11 or XWayland. Alpine/musl, ARM, and macOS are not supported by this build. The .NET runtime is included, but native system libraries are still required. On Ubuntu 24.04:
 
-При обычной ошибке/отмене подготовки программа пытается убрать свои незавершённые изменения. Журнал сохраняется **до** изменения UEFI: после аварийного завершения его можно открыть для удаления созданной записи. Если откат не удался, интерфейс сообщает об этом и показывает путь журнала. Это не резервная копия всего диска и не средство восстановления удалённой ОС.
+```sh
+sudo apt install libx11-6 libice6 libsm6 libfontconfig1 libfreetype6 libicu74 libssl3t64 libstdc++6 zlib1g libgssapi-krb5-2 libgcc-s1 ca-certificates polkitd pkexec util-linux fdisk e2fsprogs parted udev
+```
 
-## Второй режим: перезапись отдельного физического диска
+ICU, OpenSSL, and polkit package names differ between distributions. Your desktop session must have a running polkit authentication agent. Start the GUI as a regular user: BootBridge invokes a separate privileged helper through `pkexec` when needed. An operation stops if authorization is denied. System utilities are invoked by absolute path, without executing shell commands from user input.
 
-Можно выбрать логический раздел, например `E:`, чтобы определить нужный физический диск.
-**Запись всегда заменяет разметку всего физического диска, включая соседние разделы.**
-Эти ограничения относятся только ко второй вкладке. Для загрузки ISO с сохранением Windows используйте первую вкладку.
-Приложение не создаёт ISO из установленной системы: оно записывает уже скачанный ISO на носитель.
+See the [Avalonia Linux deployment documentation](https://docs.avaloniaui.net/docs/deployment/linux) for the interface's native dependencies.
 
-Для hybrid ISO не нужно заранее создавать FAT32/NTFS или вручную выбирать GPT/MBR:
-таблица разделов, файловые системы и загрузчики уже находятся в образе и переносятся побайтово.
-Неиспользуемая ёмкость большого SSD/HDD автоматически не расширяется.
-Поддержка BIOS, UEFI, Secure Boot и архитектуры процессора определяется самим ISO.
-Проверка заголовков выявляет признаки hybrid ISO, но не доказывает возможность загрузки конкретного компьютера.
+## Install Linux from an internal drive
 
-## Сборка и запуск
+Requirements: **UEFI x64, GPT, Secure Boot disabled**, and an existing FAT32 EFI System Partition (ESP) with at least 32 MiB free. The package includes an unsigned GNU GRUB 2.14 build. BootBridge does not disable Secure Boot itself.
 
-Нужен .NET 10 SDK (для сборки); для готовой framework-dependent сборки — .NET 10 Desktop Runtime x64.
+| Feature | Windows | Linux |
+|---|---|---|
+| ISO storage | Unencrypted NTFS | Mounted ext4 or NTFS |
+| System ESP | Detected through Windows | Mounted at `/boot/efi`, `/efi`, or `/boot` |
+| Create space for installation | Shrink NTFS using Windows tools | Shrink ext4 on a fully unmounted disk only |
+| Privileges | UAC when starting the EXE | Separate helper through polkit |
+| Supported installers | Ubuntu/Mint with casper; Debian Live amd64 | Same profiles |
 
-```powershell
+Boot profiles are detected from `.disk/info`, the ISO directory structure, the x86-64 kernel header, initrd, and the EFI loader. Debian netinst, Windows ISO, Fedora, and arbitrary ISO images are **not supported for booting from an ISO file**. A `.iso` extension alone does not establish compatibility.
+
+1. On the first tab, select a partition to store the ISO. You may use the current OS partition, but you must not delete or format it while the installer is using the ISO.
+2. If needed, click **Create partition…** and specify the ISO partition size and unallocated space for Linux. Review the separate partitioning plan. The wizard formats only the newly created `ISO_INSTALL` partition.
+3. Select the ISO and click **Validate and show plan**. Validation does not modify partitions, EFI files, or NVRAM.
+4. Confirm the plan and click **Prepare ISO boot**. The ISO is copied to `IsoWriter-<id>/installer.iso` on the selected partition and verified using SHA-256. GRUB and its configuration are placed in a separate `EFI/IsoWriter-<id>` directory on the ESP.
+5. A new UEFI entry is appended to `BootOrder`, preserving the existing default OS. Click **Boot Linux next** to verify the files and set `BootNext`. Restart the computer yourself.
+6. In GRUB, select **Start Linux live installer**. On timeout, GRUB exits to the firmware to allow the normal boot sequence to continue.
+7. In the installer, select another partition or unallocated space. **Do not select “erase entire disk” or format the partition containing the ISO.** To replace your current OS completely, first store the ISO on a separate partition.
+
+### Windows notes
+
+The ISO storage partition must be fully decrypted: suspending BitLocker is not sufficient for GRUB to read it. If Windows itself is on another encrypted partition, save its recovery key and suspend protection before changing boot settings. An unknown BitLocker status blocks preparation.
+
+The partition wizard uses `Get-PartitionSupportedSize` and `Resize-Partition`. Its plan is saved under `%LOCALAPPDATA%/IsoWriter`.
+
+### Linux notes
+
+To write boot files, the mount point and its parent directories must be owned by root and must not allow group or other-user writes. Suitable locations include `/`, `/mnt/installer`, and the standard system ESP. User-managed automounts under `/media/<user>` may fail this check. Mount the selected partition separately after verifying its device name with `lsblk -f`. Subdirectory mounts, LUKS, LVM, RAID, Btrfs, and XFS are not supported as ISO storage.
+
+The ext4 shrink sequence runs `e2fsck`, then `resize2fs`, then changes GPT. The entire physical disk must be unmounted, including active swap. **A running root partition cannot be shrunk; use a live environment.** An existing mounted ext4/NTFS partition can store an ISO without being resized. The new partition is temporarily mounted at `/mnt/bootbridge-<uuid>`; no fstab entry is added. After restarting Linux, mount it at the same location again to manage the installation. GRUB locates the ISO independently using its unique path.
+
+Back up your data before changing partitions. Cancellation is unavailable during resizing. If an operation fails, the filesystem or GPT may already have been shrunk; sizes are not automatically rolled back. The original GPT layout and plan are saved under `/var/lib/bootbridge`. Check the disk state before retrying.
+
+## Manage a prepared installation
+
+The ISO directory contains an `installation.json` record. Use **Open installation…** to reopen it after restarting BootBridge. **Remove boot entry** removes that installation's UEFI entry and unchanged GRUB files, while preserving the ISO and record. The `IsoWriter-*` directory names and `ISO Writer Linux` EFI labels are retained for compatibility with the previous format.
+
+If copying or registration fails, BootBridge attempts to remove its newly created files and entry. If rollback is incomplete, it displays the installation record path. Existing third-party UEFI entries, BCD, and bootloaders are not replaced. Modified entries are rejected, and modified loader files are preserved rather than deleted.
+
+## Overwrite a separate disk
+
+The second tab writes a hybrid ISO byte-for-byte to the **entire physical disk**, even if you selected one of its partitions. It requires a separate drive, 512-byte logical sectors, and the exact confirmation text `DISK N`.
+
+Windows blocks system, boot, unavailable, and composite disks, as well as the disk containing the source ISO. Linux blocks disks with mounted partitions, active swap, or active composite devices, and opens the target exclusively before writing. The selected disk's identity and layout are rechecked. Writing finishes with a cache flush and SHA-256 verification by reading the data back. Canceling does not restore the original disk contents.
+
+The Ubuntu/Mint/Debian Live profile restrictions apply to the first tab. The second tab validates hybrid ISO structure; a successful write does not itself guarantee that the image will boot on your firmware.
+
+## Build from source
+
+Install .NET SDK 10 and ensure NuGet is reachable:
+
+```sh
 dotnet build IsoWriter.csproj -c Release
 dotnet run --project tests/IsoWriter.Tests.csproj -c Release
-dotnet publish IsoWriter.csproj -c Release -r win-x64 --self-contained false -o dist
 ```
 
-Запустить `dist/IsoWriter.exe`. Манифест запрашивает права администратора.
-Для автономной сборки с включённой средой выполнения:
+To publish both self-contained builds from Windows PowerShell:
 
 ```powershell
-dotnet publish IsoWriter.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o dist-standalone
+./tools/publish.ps1
 ```
 
-Порядок работы **второй вкладки** (с удалением данных):
+To publish the Linux build and archive from Linux:
 
-1. Сделайте резервную копию нужных данных целевого диска.
-2. Обновите список и выберите диск или его логический раздел.
-3. Проверьте модель, серийный номер, ёмкость и список всех удаляемых разделов.
-4. Выберите локальный hybrid ISO. ISO должен лежать на другом физическом диске.
-5. Отметьте подтверждение, введите `ДИСК N` с указанным номером и нажмите «Записать ISO на диск».
-6. Подтвердите итоговый диалог. Дождитесь записи и чтения обратно с проверкой SHA-256.
-7. Выберите носитель в Boot Menu. Откажитесь от форматирования, если Windows предложит его для разделов Linux.
+```sh
+sh tools/publish.sh
+```
 
-## Ограничения режима перезаписи диска
+Outputs are `dist/win-x64/BootBridge.exe` and `dist/linux-x64/BootBridge`. Distribute every file in the corresponding folder together. The project file remains `IsoWriter.csproj`; the application executable is named `BootBridge`.
 
-- Системные / загрузочные диски Windows, read-only, offline и кластерные диски блокируются.
-- RAID, Storage Spaces, виртуальные и составные тома не поддерживаются. Только обычные диски с логическим сектором 512 байт (включая 512e).
-- ISO9660 с El Torito и таблицей MBR: обычные оптические ISO, Windows ISO, IMG и 4Kn не поддерживаются.
-- Перед записью повторно сверяются идентификатор, размер, сектор и разметка. Открытый дескриптор диска удерживается до окончания работы.
-- Реальное расположение открытого ISO определяется через Windows API, включая пути через ссылки и точки монтирования.
-- Все обнаруженные тома целевого диска блокируются до первой записи. Занятый том (например, файл подкачки или открытые файлы) приводит к отказу без принудительного обхода блокировки.
-- Последний свободный участок до 1 MiB очищается от старой резервной GPT. Это не безопасное стирание всех старых данных.
-- Запись и проверка работают в фоне. Отмена выполняется между блоками; при зависшем драйвере устройства может потребоваться ожидание.
-- После начала записи отмена / ошибка не восстанавливают исходные данные. Необходимо повторить запись целиком.
-- SHA-256 проверяет точность копирования, а не происхождение ISO. Подлинность ISO проверяйте по подписи / хешу его издателя.
+The workflow in `.github/workflows/build.yml` builds both platforms, runs tests, and runs the Linux GUI preview under Xvfb. After pushing the changes, packages are available under **Actions → Build Windows and Linux → Artifacts**. They are not automatically published to Releases.
 
-`--preview` рисует новый основной интерфейс с фиктивным устройством, сохраняет `preview-internal.png` рядом с программой и завершает работу. Запись, разметка и изменение UEFI отключены.
+## Validation and known limits
 
-## Проверки
+The 78 automated tests cover ISO validation, copying and readback using an in-memory device, safety restrictions, shrink plans, GRUB configuration, UEFI transactions using a fake store, Linux device parsing, and the helper protocol. They do not modify real disks or EFI variables.
 
-Тесты работают только с памятью и синтетическими образами; они не записывают физические диски.
-Дополнительно `dotnet run --project tests/IsoWriter.Tests.csproj -c Release -- --catalog` проверяет чтение списка реальных дисков и определение томов через Windows API без записи.
-Для безопасной проверки обнаружения разделов нового режима добавьте `--bootcatalog`; без административных прав неизвестное состояние BitLocker/Secure Boot корректно блокирует подготовку.
-При разработке выполнены 65 проверок: старый режим, распознавание ISO, расчёт разметки, EFI device path, фиктивные UEFI-переменные, сохранение BootOrder, защита чужого BootNext и откат ошибки регистрации. Проверены Release-сборка, вид окна и синтаксис конфигурации штатным `grub-script-check`.
-Распознавание реальных Ubuntu 24.04.4 Desktop и Debian Live 13.7.0 GNOME ISO проверено чтением небольших HTTP-диапазонов (примерно 64 и 44 KiB), без загрузки полных образов. Это проверка распознавания, не запуска установщика.
-**Фактическое уменьшение разделов, запись NVRAM, установка файлов в ESP и запуск Linux после перезагрузки на этом компьютере не выполнялись.** Полная проверка загрузки и установки на оборудовании/VM остаётся необходимой; успешные модульные тесты её не заменяют.
+`BootBridge --diagnose` reads disk and boot information without modifying it. `BootBridge --preview` opens an interface with operations disabled, saves `preview-avalonia.png` beside the application, and exits. On Windows, you can run the diagnostic DLL through `dotnet`; this does not elevate privileges.
 
-## Комплект GRUB
+The Windows GUI has been checked locally. The Linux package has been cross-compiled; the Linux GUI and actual ISO boot on a Linux machine have not yet been verified locally. CI validation starts after the changes are pushed. Validate the complete workflow in a UEFI VM with disposable disks before using it on your primary drive.
 
-Папка `assets` обязательна рядом с EXE: EFI-загрузчик, SHA-256, встроенная стартовая конфигурация, GPLv3 и соответствующие исходники GRUB 2.14. Происхождение и воспроизведение сборки описаны в `assets/GRUB-NOTICE.md`.
+## GRUB and licenses
 
-## Документация API и формата
-
-- [Debian: запись гибридных образов](https://www.debian.org/CD/faq/)
-- [Microsoft: FSCTL_LOCK_VOLUME](https://learn.microsoft.com/en-us/windows/win32/api/winioctl/ni-winioctl-fsctl_lock_volume)
-- [Microsoft: CreateFile и прямой доступ к дискам](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew)
+The `assets` directory includes GRUB 2.14, GPLv3, the corresponding source archive, and provenance information. See `assets/GRUB-NOTICE.md`. The EFI binary includes the `ext2` module for reading supported ext4 filesystems. Its checksum checks package integrity; it is not an application signature. Rebuild it using `tools/build-grub.ps1`.

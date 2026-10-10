@@ -120,6 +120,7 @@ if (args.Contains("--catalog"))
 }
 Console.WriteLine($"{passed} tests passed. No physical disks were written.");
 passed += await BootTests.RunAsync(args);
+passed += LinuxTests.Run();
 Console.WriteLine($"TOTAL: {passed} tests passed. Physical disk contents, partitions and firmware were not modified.");
 
 sealed class Reporter : IProgress<WriteProgress>

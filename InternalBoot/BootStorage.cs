@@ -24,15 +24,18 @@ internal sealed record BootPartition
     public bool Gpt { get; init; }
     public int Encryption { get; init; } = -1;
     public int Protection { get; init; } = -1;
+    public string LinuxDevice { get; init; } = "";
+    public string ParentDevice { get; init; } = "";
+    public string FileSystemUuid { get; init; } = "";
     public string Identity => $"{DiskId}|{Guid}|{Volume}|{Offset}|{Size}|{Sector}";
-    public string Root => Letter + @":\";
-    public override string ToString() => $"{Letter}: • диск {DiskNumber}, раздел {Number} • {Model} • свободно {Units.Size(Free)}{(IsBoot ? " • Windows" : "")}";
-    internal string? BlockReason => !Available || !Gpt ? "Нужен доступный обычный GPT-диск (не RAID/Storage Spaces)."
-        : IsEsp || IsSystem ? "EFI-раздел нельзя использовать для хранения ISO."
-        : FileSystem != "NTFS" ? "Для ISO нужен NTFS-раздел."
-        : Letter.Length != 1 || Letter[0] is < 'A' or > 'Z' ? "Раздел должен иметь букву диска."
-        : Encryption != 0 ? "Раздел зашифрован BitLocker или состояние шифрования неизвестно. Выберите незашифрованный раздел."
-        : !System.Guid.TryParse(Guid, out _) || !Volume.StartsWith(@"\\?\Volume{") ? "Не удалось идентифицировать раздел."
+    public string Root => LinuxDevice.Length > 0 ? Volume : Letter + @":\";
+    public override string ToString() => LinuxDevice.Length > 0 ? $"{LinuxDevice} • {FileSystem} • {(Volume.Length == 0 ? "not mounted" : Volume)} • {Units.Size(Size)}" : $"{Letter}: • disk {DiskNumber}, partition {Number} • {Model} • free {Units.Size(Free)}{(IsBoot ? " • Windows" : "")}";
+    internal string? BlockReason => LinuxDevice.Length > 0 ? Platform.LinuxStorage.StagingBlockReason(this) : !Available || !Gpt ? "An accessible basic GPT disk is required (no RAID/Storage Spaces)."
+        : IsEsp || IsSystem ? "The EFI partition cannot be used to store the ISO."
+        : FileSystem != "NTFS" ? "An NTFS partition is required to store the ISO."
+        : Letter.Length != 1 || Letter[0] is < 'A' or > 'Z' ? "The partition must have a drive letter."
+        : Encryption != 0 ? "The partition is BitLocker-encrypted or its encryption status is unknown. Select an unencrypted partition."
+        : !System.Guid.TryParse(Guid, out _) || !Volume.StartsWith(@"\\?\Volume{") ? "Could not identify the partition."
         : null;
 }
 
@@ -41,18 +44,21 @@ internal sealed record BootEnvironment
     public int SecureBoot { get; init; } = -1;
     public string DetectionWarning { get; init; } = "";
     public BootPartition[] Partitions { get; init; } = [];
+    public bool Linux { get; init; }
+    public bool Uefi { get; init; }
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool GetFirmwareType(out uint type);
-    internal BootPartition Esp => Partitions.SingleOrDefault(p => p.IsEsp && p.IsSystem) ?? throw new IOException("Не найден единственный системный EFI-раздел.");
+    internal BootPartition Esp => Partitions.SingleOrDefault(p => p.IsEsp && p.IsSystem) ?? throw new IOException("Could not identify a single system EFI partition.");
     internal void Validate()
     {
-        if (!string.IsNullOrWhiteSpace(DetectionWarning)) throw new IOException("Не удалось проверить BitLocker. Запустите IsoWriter.exe от имени администратора. " + DetectionWarning);
+        if (Linux) { Platform.LinuxStorage.ValidateEnvironment(this); return; }
+        if (!string.IsNullOrWhiteSpace(DetectionWarning)) throw new IOException("Could not check BitLocker. Run BootBridge.exe as administrator. " + DetectionWarning);
         if (!Environment.Is64BitOperatingSystem || RuntimeInformation.OSArchitecture != Architecture.X64 || !GetFirmwareType(out uint type) || type != 2)
-            throw new IOException("Этот режим поддерживает Windows x64 с загрузкой UEFI. Legacy BIOS не поддерживается.");
-        if (SecureBoot != 0) throw new IOException("Этот GRUB не подписан для Secure Boot. Отключите Secure Boot в настройках UEFI и повторите проверку; приложение не меняет эту настройку.");
-        var os = Partitions.SingleOrDefault(p => p.IsBoot) ?? throw new IOException("Не удалось определить раздел Windows.");
-        if (os.Protection != 0) throw new IOException("Защита BitLocker на Windows активна или неизвестна. Сохраните ключ восстановления и приостановите защиту перед изменением загрузки.");
+            throw new IOException("This mode requires Windows x64 booted in UEFI mode. Legacy BIOS is not supported.");
+        if (SecureBoot != 0) throw new IOException("This GRUB build is not signed for Secure Boot. Disable Secure Boot in UEFI settings and check again; the application does not change this setting.");
+        var os = Partitions.SingleOrDefault(p => p.IsBoot) ?? throw new IOException("Could not identify the Windows partition.");
+        if (os.Protection != 0) throw new IOException("BitLocker protection for Windows is active or unknown. Save the recovery key and suspend protection before changing boot settings.");
         if (!Esp.Available || !Esp.Gpt || Esp.FileSystem != "FAT32" || Esp.Sector <= 0 || Esp.Free < 32L * 1024 * 1024)
-            throw new IOException("EFI-раздел должен быть доступным FAT32/GPT со свободными 32 MiB.");
+            throw new IOException("The EFI partition must be accessible FAT32/GPT with 32 MiB free.");
     }
 }
 
@@ -96,6 +102,7 @@ internal static class BootStorage
         try { $secure = [int](Confirm-SecureBootUEFI) } catch { }
         [pscustomobject]@{ SecureBoot=$secure; DetectionWarning=$warning; Partitions=$parts } | ConvertTo-Json -Depth 5 -Compress
         """;
-    internal static async Task<BootEnvironment> ReadAsync(CancellationToken token = default) =>
-        JsonSerializer.Deserialize<BootEnvironment>(await SystemProcess.PowerShell(Query, token)) ?? throw new IOException("Пустые сведения о дисках.");
+    internal static async Task<BootEnvironment> ReadAsync(CancellationToken token = default) => OperatingSystem.IsLinux()
+        ? await Platform.LinuxStorage.ReadBootAsync(token)
+        : JsonSerializer.Deserialize<BootEnvironment>(await SystemProcess.PowerShell(Query, token)) ?? throw new IOException("No disk information was returned.");
 }

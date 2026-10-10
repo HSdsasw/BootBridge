@@ -48,7 +48,7 @@ internal sealed class WindowsFirmware : IFirmwareStore
     public void Write(string name, byte[]? bytes)
     {
         if (!SetFirmwareEnvironmentVariableEx(name, Global, bytes, (uint)(bytes?.Length ?? 0), bytes is null ? 0u : 7u)) throw Error();
-        if (!(Read(name) ?? []).AsSpan().SequenceEqual(bytes ?? [])) throw new IOException("UEFI не сохранила переменную " + name);
+        if (!(Read(name) ?? []).AsSpan().SequenceEqual(bytes ?? [])) throw new IOException("UEFI did not save variable " + name);
     }
 }
 
@@ -58,7 +58,7 @@ internal static class EfiOption
     {
         if (!Guid.TryParseExact(installationId, "N", out _) || !Guid.TryParse(esp.Guid, out Guid partitionId)
             || !esp.IsEsp || !esp.Gpt || esp.Sector <= 0 || esp.Offset % esp.Sector != 0 || esp.Size % esp.Sector != 0)
-            throw new InvalidDataException("Некорректные параметры EFI-раздела.");
+            throw new InvalidDataException("Invalid EFI partition parameters.");
         string path = $@"\EFI\IsoWriter-{installationId}\grubx64.efi";
         byte[] file = Encoding.Unicode.GetBytes(path + '\0');
         using var memory = new MemoryStream();
@@ -81,30 +81,30 @@ internal sealed class FirmwareManager(IFirmwareStore store)
     internal static ushort[] Decode(byte[]? value)
     {
         if (value is null) return [];
-        if (value.Length % 2 != 0) throw new IOException("Некорректный BootOrder UEFI.");
+        if (value.Length % 2 != 0) throw new IOException("Invalid UEFI BootOrder.");
         return Enumerable.Range(0, value.Length / 2).Select(i => BitConverter.ToUInt16(value, i * 2)).ToArray();
     }
     private static byte[] Encode(IEnumerable<ushort> numbers) => numbers.SelectMany(BitConverter.GetBytes).ToArray();
     internal ushort ReserveNumber()
     {
         var order = Decode(store.Read("BootOrder"));
-        if (order.Length == 0) throw new IOException("BootOrder пуст: автоматическое добавление загрузчика запрещено.");
+        if (order.Length == 0) throw new IOException("BootOrder is empty: automatic bootloader registration is blocked.");
         for (ushort id = 0x2000; id < 0x2100; id++)
             if (!order.Contains(id) && store.Read(Name(id)) is null) return id;
-        throw new IOException("Не найден свободный номер UEFI для ISO Writer.");
+        throw new IOException("No unused UEFI entry number is available for ISO Writer.");
     }
     internal void Add(ushort number, byte[] option)
     {
-        if (store.Read(Name(number)) is not null) throw new IOException("Номер UEFI уже занят. Повторите подготовку.");
+        if (store.Read(Name(number)) is not null) throw new IOException("The UEFI entry number is already in use. Prepare the installation again.");
         store.Write(Name(number), option);
         var order = Decode(store.Read("BootOrder"));
-        if (order.Length == 0 || order.Contains(number)) throw new IOException("BootOrder изменился во время установки.");
+        if (order.Length == 0 || order.Contains(number)) throw new IOException("BootOrder changed during installation.");
         store.Write("BootOrder", Encode(order.Append(number))); // preserve existing default
     }
     internal void Schedule(ushort number, byte[] option)
     {
         VerifyOwner(number, option);
-        if (store.Read("BootNext") is not null) throw new IOException("Уже запланирована другая следующая загрузка. Сначала выполните её или отмените в настройках системы.");
+        if (store.Read("BootNext") is not null) throw new IOException("Another next boot is already scheduled. Complete it first or cancel it in system settings.");
         store.Write("BootNext", BitConverter.GetBytes(number));
     }
     internal void Remove(ushort number, byte[] option)
@@ -116,7 +116,7 @@ internal sealed class FirmwareManager(IFirmwareStore store)
         if (order.Contains(number))
         {
             var next = order.Where(n => n != number).ToArray();
-            if (next.Length == 0) throw new IOException("Отказ от удаления последнего пункта UEFI.");
+            if (next.Length == 0) throw new IOException("Refusing to remove the last UEFI entry.");
             store.Write("BootOrder", Encode(next));
         }
         if (existing is not null) store.Write(Name(number), null);
@@ -124,6 +124,6 @@ internal sealed class FirmwareManager(IFirmwareStore store)
     private void VerifyOwner(ushort number, byte[] option)
     {
         if (!(store.Read(Name(number)) ?? []).AsSpan().SequenceEqual(option))
-            throw new IOException("Этот пункт UEFI изменён или принадлежит другой программе. Автоматическое изменение запрещено.");
+            throw new IOException("This UEFI entry was changed or belongs to another application. Automatic modification is blocked.");
     }
 }

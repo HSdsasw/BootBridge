@@ -10,7 +10,7 @@ public sealed record Partition
     public bool IsBoot { get; init; }
     public bool IsSystem { get; init; }
     public string[] Paths { get; init; } = [];
-    public string Caption => $"Раздел {Number}{(string.IsNullOrWhiteSpace(Letter) ? "" : $" ({Letter}:)")} • {Units.Size(Size)} • {Type}";
+    public string Caption => $"Partition {Number}{(string.IsNullOrWhiteSpace(Letter) ? "" : $" ({Letter}:)")} • {Units.Size(Size)} • {Type}";
 }
 
 public sealed record Disk
@@ -28,24 +28,26 @@ public sealed record Disk
     public bool IsReadOnly { get; init; }
     public bool IsClustered { get; init; }
     public Partition[] Partitions { get; init; } = [];
-    public string DevicePath => $@"\\.\PhysicalDrive{Number}";
-    public string? BlockReason => IsBoot || IsSystem || Partitions.Any(p => p.IsBoot || p.IsSystem)
-        ? "Системный / загрузочный диск Windows"
-        : IsReadOnly ? "Диск защищён от записи"
-        : IsOffline ? "Диск отключён (Offline)"
-        : IsClustered ? "Кластерный диск"
+    public string LinuxDevice { get; init; } = "";
+    public string? PlatformBlockReason { get; init; }
+    public string DevicePath => LinuxDevice.Length > 0 ? LinuxDevice : $@"\\.\PhysicalDrive{Number}";
+    public string? BlockReason => PlatformBlockReason ?? (IsBoot || IsSystem || Partitions.Any(p => p.IsBoot || p.IsSystem)
+        ? "Windows system / boot disk"
+        : IsReadOnly ? "The disk is write-protected"
+        : IsOffline ? "The disk is offline"
+        : IsClustered ? "Clustered disk"
         : !new[] { "USB", "SATA", "ATA", "SCSI", "NVMe", "SAS", "SD", "MMC" }.Contains(Bus)
-            ? $"Неподдерживаемый тип диска: {Bus} (RAID, виртуальные и составные диски запрещены)"
-        : SectorSize != 512 ? "Требуется логический сектор 512 байт; 4Kn ISO не поддерживается"
-        : string.IsNullOrWhiteSpace(UniqueId) ? "Не удалось получить идентификатор диска"
-        : null;
+            ? $"Unsupported disk type: {Bus} (RAID, virtual and composite disks are blocked)"
+        : SectorSize != 512 ? "A 512-byte logical sector is required; 4Kn ISO is not supported"
+        : string.IsNullOrWhiteSpace(UniqueId) ? "Could not retrieve the disk identity"
+        : null);
     public string Identity => $"{Number}|{UniqueId}|{Serial}|{Size}|{SectorSize}";
     public string Layout => string.Join(";", Partitions.Select(p => $"{p.Number}:{p.Offset}:{p.Size}:{string.Join(',', p.Paths)}"));
 }
 
 public sealed record Target(Disk Disk, Partition? Partition)
 {
-    public override string ToString() => $"{(Partition is null ? "Весь диск" : Partition.Caption)} → Диск {Disk.Number} • {Disk.Model} • {Units.Size(Disk.Size)}{(Disk.BlockReason is null ? "" : " [ЗАБЛОКИРОВАН]")}";
+    public override string ToString() => $"{(Partition is null ? "Entire disk" : Partition.Caption)} → Disk {Disk.Number} • {Disk.Model} • {Units.Size(Disk.Size)}{(Disk.BlockReason is null ? "" : " [BLOCKED]")}";
 }
 
 public static class Units
@@ -58,9 +60,9 @@ public static class Safety
     public static void Validate(Disk selected, Disk current, long imageSize, IEnumerable<int> sourceDisks)
     {
         if (selected.Identity != current.Identity || selected.Layout != current.Layout)
-            throw new InvalidOperationException("Диск или его разметка изменились. Обновите список и подтвердите выбор заново.");
+            throw new InvalidOperationException("The disk or its layout changed. Refresh the list and confirm the selection again.");
         if (current.BlockReason is { } reason) throw new InvalidOperationException(reason);
-        if (imageSize <= 0 || imageSize > current.Size) throw new InvalidOperationException("Образ не помещается на диск.");
-        if (sourceDisks.Contains(current.Number)) throw new InvalidOperationException("ISO находится на выбранном физическом диске. Перенесите ISO на другой диск.");
+        if (imageSize <= 0 || imageSize > current.Size) throw new InvalidOperationException("The image does not fit on the disk.");
+        if (sourceDisks.Contains(current.Number)) throw new InvalidOperationException("The ISO is on the selected physical disk. Move the ISO to another disk.");
     }
 }

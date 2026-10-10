@@ -1,0 +1,36 @@
+name: Build Windows and Linux
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+          - os: ubuntu-24.04
+            rid: linux-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet run --project tests/IsoWriter.Tests.csproj -c Release
+      - run: dotnet publish IsoWriter.csproj -c Release -r ${{ matrix.rid }} --self-contained true -o dist/${{ matrix.rid }}
+      - name: Linux GUI smoke test
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libx11-6 libice6 libsm6 libfontconfig1 libfreetype6
+          chmod +x dist/linux-x64/BootBridge dist/linux-x64/start-bootbridge.sh
+          xvfb-run -a dist/linux-x64/BootBridge --preview
+          test -s dist/linux-x64/preview-avalonia.png
+          tar -czf dist/BootBridge-linux-x64.tar.gz -C dist linux-x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BootBridge-${{ matrix.rid }}
+          path: |
+            dist/${{ matrix.rid }}/
+            dist/BootBridge-${{ matrix.rid }}.tar.gz

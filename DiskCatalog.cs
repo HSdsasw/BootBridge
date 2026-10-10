@@ -39,6 +39,7 @@ public static class DiskCatalog
 
     public static async Task<Disk[]> LoadAsync(CancellationToken cancellationToken = default)
     {
+        if (OperatingSystem.IsLinux()) return await Platform.LinuxStorage.ReadDisksAsync(cancellationToken);
         var start = new ProcessStartInfo
         {
             FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), @"WindowsPowerShell\v1.0\powershell.exe"),
@@ -48,14 +49,14 @@ public static class DiskCatalog
         };
         foreach (var arg in new[] { "-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", Convert.ToBase64String(Encoding.Unicode.GetBytes(Script)) })
             start.ArgumentList.Add(arg);
-        using var process = Process.Start(start) ?? throw new IOException("Не удалось запустить службу обнаружения дисков.");
+        using var process = Process.Start(start) ?? throw new IOException("Could not start disk discovery.");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(45));
         var output = process.StandardOutput.ReadToEndAsync();
         var error = process.StandardError.ReadToEndAsync();
         try { await process.WaitForExitAsync(timeout.Token); }
         catch { if (!process.HasExited) process.Kill(true); throw; }
-        if (process.ExitCode != 0) throw new IOException("Не удалось получить список дисков: " + await error);
+        if (process.ExitCode != 0) throw new IOException("Could not list disks: " + await error);
         return JsonSerializer.Deserialize<Disk[]>(await output) ?? [];
     }
 }

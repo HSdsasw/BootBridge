@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $grubDirectory = Join-Path $projectRoot 'tools\grub-2.14\grub-2.14-for-windows'
-$modules = 'part_gpt part_msdos fat ntfs iso9660 loopback search search_fs_file search_fs_uuid normal configfile linux chain reboot halt echo sleep test'
+$modules = 'part_gpt part_msdos fat ntfs ext2 iso9660 loopback search search_fs_file search_fs_uuid normal configfile linux chain reboot halt echo sleep test'
 Push-Location $projectRoot
 try {
     & (Join-Path $grubDirectory 'grub-mkstandalone.exe') -O x86_64-efi -d (Join-Path $grubDirectory 'x86_64-efi') --modules=$modules --locales= --fonts= -o assets/grubx64.efi 'boot/grub/grub.cfg=assets/bootstrap.cfg'
